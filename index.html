@@ -3,9 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHER NOVA | Physics Sandbox</title>
+    <title>AETHER NOVA | Tactical Simulator</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; overflow: hidden; background-color: #050510; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* UI OVERLAY STYLES */
+        #menu-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            color: white;
+        }
+        
+        h1 {
+            font-family: 'Courier New', monospace;
+            font-size: 3em;
+            letter-spacing: 10px;
+            color: #00ffff;
+            text-shadow: 0 0 20px #00ffff;
+            margin-bottom: 10px;
+        }
+
+        .container {
+            display: flex;
+            gap: 50px;
+            margin-bottom: 40px;
+        }
+
+        .column {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #333;
+            padding: 20px;
+            width: 300px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .column h2 {
+            border-bottom: 2px solid #00ffff;
+            padding-bottom: 10px;
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #aaa;
+        }
+
+        .option-card {
+            background: rgba(0, 0, 0, 0.5);
+            margin: 10px 0;
+            padding: 15px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .option-card:hover {
+            background: rgba(0, 255, 255, 0.1);
+            border-color: #00ffff;
+        }
+
+        .option-card.selected {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: #00ffff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+        }
+
+        .option-title { font-weight: bold; color: #fff; font-size: 1.1em; }
+        .option-desc { font-size: 0.8em; color: #888; margin-top: 5px; }
+
+        #launch-btn {
+            background: transparent;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            font-size: 2em;
+            padding: 15px 50px;
+            border: 2px solid #00ffff;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            transition: 0.3s;
+        }
+
+        #launch-btn:hover {
+            background: #00ffff;
+            color: #000;
+            box-shadow: 0 0 30px #00ffff;
+        }
+
+        /* HUD STYLES */
         #hud {
             position: absolute;
             top: 20px;
@@ -14,6 +103,7 @@
             text-shadow: 0 0 5px #0ff;
             pointer-events: none;
             user-select: none;
+            display: none; /* Hidden until launch */
         }
         #reticle {
             position: absolute;
@@ -25,39 +115,53 @@
             border-radius: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
-        }
-        #warning {
-            position: absolute;
-            top: 80%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #ff0055;
-            font-size: 24px;
-            font-weight: bold;
             display: none;
-            text-shadow: 0 0 10px #ff0000;
-            animation: blink 0.2s infinite;
         }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
-        .stat { margin-bottom: 5px; }
+        .stat { margin-bottom: 5px; font-family: 'Courier New', monospace; }
     </style>
 </head>
 <body>
+
+    <!-- MENU SCREEN -->
+    <div id="menu-overlay">
+        <h1>AETHER NOVA</h1>
+        <p style="color: #666; margin-bottom: 40px;">// TACTICAL SIMULATION ENVIRONMENT //</p>
+
+        <div class="container">
+            <!-- PLANES -->
+            <div class="column" id="plane-list">
+                <h2>AIRCRAFT HANGAR</h2>
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- NUKES -->
+            <div class="column" id="nuke-list">
+                <h2>ORDNANCE BAY</h2>
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <button id="launch-btn" onclick="startGame()">INITIATE LAUNCH</button>
+    </div>
+
+    <!-- HUD -->
     <div id="hud">
-        <div class="stat"><h3>AETHER NOVA // PROTOCOL</h3></div>
+        <div class="stat"><h3 id="hud-plane-name">UNKNOWN AIRCRAFT</h3></div>
+        <div class="stat">WEAPON: <span id="hud-nuke-name" style="color:#ffaa00">--</span></div>
         <div class="stat">ALTITUDE: <span id="alt">0</span> m</div>
         <div class="stat">SPEED: <span id="spd">0</span> MACH</div>
-        <div class="stat">STATUS: <span id="status" style="color:#0f0">STABLE</span></div>
-        <div class="stat" style="margin-top:10px; font-size: 0.8em;">[W/S] Pitch | [A/D] Roll | [SPACE] Drop Payload</div>
+        <div class="stat" style="margin-top:10px; font-size: 0.8em; color: #888;">
+            [W/S] Pitch | [A/D] Roll | [SPACE] Drop Payload | [Mouse] Look
+        </div>
     </div>
     <div id="reticle"></div>
-    <div id="warning">IMPACT IMMINENT</div>
 
+    <!-- THREE.JS IMPORT MAP -->
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -68,205 +172,370 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-        // --- CONFIGURATION ---
-        const WORLD_SIZE = 4000;
-        const CHUNK_SIZE = 100;
-        const BUILDING_COUNT = 800;
-        const SPEED = 2.5;
+        // --- GAME DATA ---
         
-        // --- AUDIO SYSTEM (Synthesized) ---
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const PLANES = [
+            { 
+                id: 'fighter', 
+                name: 'X-14 THUNDERBIRD', 
+                desc: 'Balanced multi-role interceptor. Agile and reliable.',
+                speed: 2.5, 
+                turnSpeed: 1.5,
+                color: 0x00aaff,
+                type: 'jet'
+            },
+            { 
+                id: 'bomber', 
+                name: 'B-99 VALKYRIE', 
+                desc: 'Heavy strategic bomber. Slow, high inertia, stable platform.',
+                speed: 1.2, 
+                turnSpeed: 0.8,
+                color: 0xdddddd,
+                type: 'bomber'
+            },
+            { 
+                id: 'stealth', 
+                name: 'S-7 SPECTRE', 
+                desc: 'Next-gen stealth recon. Extremely fast, highly sensitive controls.',
+                speed: 3.8, 
+                turnSpeed: 2.2,
+                color: 0x111111,
+                type: 'stealth'
+            },
+            {
+                id: 'experimental',
+                name: 'XV-01 PROTOTYPE',
+                desc: 'Unstable engine core. Max speed creates visual distortion.',
+                speed: 4.5,
+                turnSpeed: 3.0,
+                color: 0xff0055,
+                type: 'racer'
+            }
+        ];
+
+        const NUKES = [
+            { 
+                id: 'gravity', 
+                name: 'GRAVITY COLLAPSE', 
+                desc: 'Creates a micro-singularity. Implodes debris before release.',
+                color: 0x8800ff, 
+                shockColor: 0xaa00ff,
+                radius: 400,
+                physics: 'suction'
+            },
+            { 
+                id: 'solar', 
+                name: 'HELIOS FLARE', 
+                desc: 'Standard fusion warhead. Massive thermal radius.',
+                color: 0xffaa00, 
+                shockColor: 0xff5500,
+                radius: 600,
+                physics: 'push'
+            },
+            { 
+                id: 'cryo', 
+                name: 'ABSOLUTE ZERO', 
+                desc: 'Flash freezes the atmosphere. Debris hangs in stasis.',
+                color: 0x00ffff, 
+                shockColor: 0xaaffff,
+                radius: 350,
+                physics: 'freeze'
+            },
+            { 
+                id: 'void', 
+                name: 'VOID ERASER', 
+                desc: 'Pure darkness. Deletes matter from existence.',
+                color: 0x000000, 
+                shockColor: 0xffffff,
+                radius: 500,
+                physics: 'delete'
+            }
+        ];
+
+        // Global State
+        let selectedPlane = PLANES[0];
+        let selectedNuke = NUKES[0];
+        let isGameRunning = false;
+
+        // --- MENU LOGIC ---
+        function initMenu() {
+            const pList = document.getElementById('plane-list');
+            const nList = document.getElementById('nuke-list');
+
+            // Render Planes
+            PLANES.forEach((p, index) => {
+                const el = document.createElement('div');
+                el.className = `option-card ${index === 0 ? 'selected' : ''}`;
+                el.innerHTML = `<div class="option-title">${p.name}</div><div class="option-desc">${p.desc}</div>`;
+                el.onclick = () => {
+                    document.querySelectorAll('#plane-list .option-card').forEach(c => c.classList.remove('selected'));
+                    el.classList.add('selected');
+                    selectedPlane = p;
+                };
+                pList.appendChild(el);
+            });
+
+            // Render Nukes
+            NUKES.forEach((n, index) => {
+                const el = document.createElement('div');
+                el.className = `option-card ${index === 0 ? 'selected' : ''}`;
+                el.innerHTML = `<div class="option-title" style="color:#${n.color.toString(16).padStart(6,'0')}">${n.name}</div><div class="option-desc">${n.desc}</div>`;
+                el.onclick = () => {
+                    document.querySelectorAll('#nuke-list .option-card').forEach(c => c.classList.remove('selected'));
+                    el.classList.add('selected');
+                    selectedNuke = n;
+                };
+                nList.appendChild(el);
+            });
+        }
         
+        // Expose start function to global scope for button
+        window.startGame = function() {
+            document.getElementById('menu-overlay').style.display = 'none';
+            document.getElementById('hud').style.display = 'block';
+            document.getElementById('reticle').style.display = 'block';
+            
+            // Update HUD
+            document.getElementById('hud-plane-name').innerText = selectedPlane.name;
+            document.getElementById('hud-nuke-name').innerText = selectedNuke.name;
+            document.getElementById('hud-nuke-name').style.color = '#' + selectedNuke.color.toString(16).padStart(6,'0');
+
+            initThreeJS();
+        }
+
+        initMenu();
+
+
+        // --- THREE.JS LOGIC ---
+        
+        let scene, camera, renderer, composer;
+        let playerGroup, cityGroup;
+        let buildings = [];
+        let bombs = [];
+        let explosions = [];
+        let debris = [];
+        let shakeMagnitude = 0;
+        let pitch = 0, roll = 0;
+        let speed = 0;
+
+        function initThreeJS() {
+            isGameRunning = true;
+            speed = selectedPlane.speed;
+
+            // 1. Setup Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050510, 0.0015);
+            scene.background = new THREE.Color(0x050510);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            document.body.appendChild(renderer.domElement);
+
+            // 2. Post Processing
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.2;
+            bloomPass.strength = 1.5;
+            bloomPass.radius = 0.5;
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            // 3. Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 2); 
+            scene.add(ambientLight);
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+            sunLight.position.set(100, 500, 100);
+            scene.add(sunLight);
+
+            // 4. Generate City
+            generateCity();
+
+            // 5. Build Player Aircraft
+            buildAircraft();
+
+            // 6. Audio Context
+            initAudio();
+
+            // 7. Start Loop
+            animate();
+        }
+
+        function generateCity() {
+            cityGroup = new THREE.Group();
+            scene.add(cityGroup);
+
+            const geo = new THREE.BoxGeometry(1, 1, 1);
+            const matBody = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.8 });
+            const matEdge = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.1 });
+
+            // Floor Grid
+            const gridHelper = new THREE.GridHelper(4000, 200, 0x00ffff, 0x111133);
+            gridHelper.position.y = -2;
+            scene.add(gridHelper);
+
+            for (let i = 0; i < 800; i++) {
+                const h = Math.random() * 80 + 20;
+                const w = Math.random() * 20 + 10;
+                const d = Math.random() * 20 + 10;
+                const x = (Math.random() - 0.5) * 4000;
+                const z = (Math.random() - 0.5) * 4000;
+
+                const mesh = new THREE.Mesh(geo, matBody);
+                mesh.position.set(x, h / 2, z);
+                mesh.scale.set(w, h, d);
+                
+                const edge = new THREE.Mesh(geo, matEdge);
+                edge.scale.set(1.02, 1.02, 1.02);
+                mesh.add(edge);
+
+                mesh.userData = { originalScale: new THREE.Vector3(w, h, d), isDestroyed: false };
+                cityGroup.add(mesh);
+                buildings.push(mesh);
+            }
+        }
+
+        function buildAircraft() {
+            playerGroup = new THREE.Group();
+            scene.add(playerGroup);
+            playerGroup.position.set(0, 300, 1000); // Start high
+
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: selectedPlane.color, 
+                roughness: 0.4,
+                metalness: 0.8,
+                emissive: selectedPlane.color,
+                emissiveIntensity: 0.2
+            });
+
+            let bodyGeo, wingGeo;
+
+            if (selectedPlane.type === 'stealth') {
+                bodyGeo = new THREE.ConeGeometry(1.5, 8, 4); // Sharp
+                wingGeo = new THREE.BoxGeometry(8, 0.1, 4);
+                bodyGeo.rotateX(Math.PI/2);
+            } else if (selectedPlane.type === 'bomber') {
+                bodyGeo = new THREE.BoxGeometry(4, 2, 10); // Bulky
+                wingGeo = new THREE.BoxGeometry(16, 0.5, 3);
+            } else {
+                // Default Fighter
+                bodyGeo = new THREE.ConeGeometry(1, 5, 16);
+                bodyGeo.rotateX(Math.PI/2);
+                wingGeo = new THREE.BoxGeometry(6, 0.2, 2);
+            }
+
+            const body = new THREE.Mesh(bodyGeo, mat);
+            const wings = new THREE.Mesh(wingGeo, mat);
+            
+            // Wing placement
+            if(selectedPlane.type === 'stealth') {
+                wings.position.z = 1;
+                wings.geometry.translate(0,0,1); // Back swept
+            } else {
+                wings.position.z = 0.5;
+            }
+
+            playerGroup.add(body);
+            playerGroup.add(wings);
+
+            // Engine Particle Trail
+            // (Simplified for performance, just a light for now)
+            const engineLight = new THREE.PointLight(0x00ffff, 1, 20);
+            engineLight.position.z = 3;
+            playerGroup.add(engineLight);
+        }
+
+        // --- AUDIO SYSTEM ---
+        let audioCtx;
+        function initAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
         function playSound(type) {
+            if(!audioCtx) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-
             const now = audioCtx.currentTime;
-            
+
             if (type === 'drop') {
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(800, now);
-                osc.frequency.exponentialRampToValueAtTime(100, now + 1.0);
-                gain.gain.setValueAtTime(0.5, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now + 1.5);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.linearRampToValueAtTime(0, now + 1.5);
                 osc.start(now);
-                osc.stop(now + 1.0);
-            } else if (type === 'explode') {
-                // White noise buffer for explosion
+                osc.stop(now + 1.5);
+            } else if (type === 'boom') {
+                // Noise burst
                 const bufferSize = audioCtx.sampleRate * 2.0;
                 const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
                 const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = Math.random() * 2 - 1;
-                }
+                for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
                 const noise = audioCtx.createBufferSource();
                 noise.buffer = buffer;
                 
-                // Lowpass filter for "distant thud" feel
                 const filter = audioCtx.createBiquadFilter();
                 filter.type = 'lowpass';
-                filter.frequency.value = 1000;
-
+                filter.frequency.value = 500; // Muffled distant sound
+                
                 noise.connect(filter);
                 filter.connect(gain);
                 
-                gain.gain.setValueAtTime(1, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 2.0);
+                gain.gain.setValueAtTime(2.0, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 3.0);
                 noise.start(now);
-                noise.stop(now + 2.0);
+                noise.stop(now + 3.0);
             }
         }
 
-        // --- SCENE SETUP ---
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x050510, 0.0015);
-        scene.background = new THREE.Color(0x050510);
-
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
-        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.toneMapping = THREE.ReinhardToneMapping;
-        document.body.appendChild(renderer.domElement);
-
-        // --- POST PROCESSING (BLOOM) ---
-        const renderScene = new RenderPass(scene, camera);
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-        bloomPass.threshold = 0.2;
-        bloomPass.strength = 1.2; // High bloom for sci-fi look
-        bloomPass.radius = 0.5;
-
-        const composer = new EffectComposer(renderer);
-        composer.addPass(renderScene);
-        composer.addPass(bloomPass);
-
-        // --- LIGHTING ---
-        const ambientLight = new THREE.AmbientLight(0x404040, 2); // Soft white light
-        scene.add(ambientLight);
-
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1);
-        sunLight.position.set(100, 500, 100);
-        scene.add(sunLight);
-
-        // --- CITY GENERATION ---
-        const buildings = [];
-        const cityGroup = new THREE.Group();
-        scene.add(cityGroup);
-
-        const geo = new THREE.BoxGeometry(1, 1, 1);
-        // Neon Cyberpunk Material
-        const matBody = new THREE.MeshStandardMaterial({ 
-            color: 0x111111, 
-            roughness: 0.1, 
-            metalness: 0.8 
-        });
-        const matEdge = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.1 });
-
-        // Ground Grid
-        const gridHelper = new THREE.GridHelper(WORLD_SIZE * 2, 200, 0x00ffff, 0x111133);
-        gridHelper.position.y = -2;
-        scene.add(gridHelper);
-
-        for (let i = 0; i < BUILDING_COUNT; i++) {
-            const h = Math.random() * 80 + 20; // Random height
-            const w = Math.random() * 20 + 10;
-            const d = Math.random() * 20 + 10;
-            const x = (Math.random() - 0.5) * WORLD_SIZE;
-            const z = (Math.random() - 0.5) * WORLD_SIZE;
-
-            const mesh = new THREE.Mesh(geo, matBody);
-            mesh.position.set(x, h / 2, z);
-            mesh.scale.set(w, h, d);
-            
-            // Add a glow edge
-            const edge = new THREE.Mesh(geo, matEdge);
-            edge.scale.set(1.02, 1.02, 1.02); // Slightly larger for outline effect
-            mesh.add(edge);
-
-            mesh.userData = { 
-                originalScale: new THREE.Vector3(w, h, d),
-                isDestroyed: false,
-                velocity: new THREE.Vector3()
-            };
-
-            cityGroup.add(mesh);
-            buildings.push(mesh);
-        }
-
-        // --- PLAYER (AIRCRAFT) ---
-        const playerGroup = new THREE.Group();
-        scene.add(playerGroup);
-
-        // Simple Sci-Fi Ship Geometry
-        const shipGeo = new THREE.ConeGeometry(1, 4, 4);
-        shipGeo.rotateX(Math.PI / 2);
-        const shipMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x444444 });
-        const shipMesh = new THREE.Mesh(shipGeo, shipMat);
-        playerGroup.add(shipMesh);
-        
-        // Wings
-        const wingGeo = new THREE.BoxGeometry(6, 0.2, 2);
-        const wingMesh = new THREE.Mesh(wingGeo, shipMat);
-        wingMesh.position.z = 1;
-        playerGroup.add(wingMesh);
-
-        // Engine Trail (Particles)
-        const trailParticles = [];
-        const trailGeo = new THREE.BufferGeometry();
-        const trailMat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.5, transparent: true, opacity: 0.8 });
-        
-        playerGroup.position.set(0, 150, 500);
-        let pitch = 0, roll = 0, yaw = 0;
-        let speed = SPEED;
-
-        // --- NUKE & PHYSICS SYSTEM ---
-        const bombs = [];
-        const explosions = [];
-        const debris = [];
+        // --- PHYSICS & FX ---
 
         class Nuke {
-            constructor(pos, velocity) {
+            constructor(pos, vel, type) {
+                this.type = type;
                 this.mesh = new THREE.Mesh(
                     new THREE.SphereGeometry(2, 16, 16),
-                    new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
+                    new THREE.MeshBasicMaterial({ color: type.color, wireframe: true })
                 );
                 this.mesh.position.copy(pos);
-                this.velocity = velocity.clone();
+                this.velocity = vel.clone();
                 this.active = true;
                 scene.add(this.mesh);
             }
             update(dt) {
-                this.velocity.y -= 9.8 * dt; // Gravity
+                if(!this.active) return;
+                this.velocity.y -= 9.8 * dt; 
                 this.mesh.position.addScaledVector(this.velocity, dt);
-                
-                // Ground hit
-                if (this.mesh.position.y <= 0 && this.active) {
-                    this.detonate();
-                }
+                if (this.mesh.position.y <= 0) this.detonate();
             }
             detonate() {
                 this.active = false;
                 scene.remove(this.mesh);
-                createExplosion(this.mesh.position);
-                playSound('explode');
+                spawnExplosion(this.mesh.position, this.type);
+                playSound('boom');
             }
         }
 
-        function createExplosion(pos) {
-            // Flash Light
-            const light = new THREE.PointLight(0x5500ff, 50, 1000); // Violet sci-fi nuke
+        function spawnExplosion(pos, type) {
+            // Flash
+            const light = new THREE.PointLight(type.color, 50, 2000);
             light.position.copy(pos);
-            light.position.y += 20;
+            light.position.y += 50;
             scene.add(light);
 
-            // Shockwave Sphere
+            // Shockwave
             const shockGeo = new THREE.SphereGeometry(1, 32, 32);
             const shockMat = new THREE.MeshBasicMaterial({ 
-                color: 0xaa88ff, 
+                color: type.shockColor, 
                 transparent: true, 
-                opacity: 0.5,
+                opacity: 0.6,
                 side: THREE.BackSide,
                 blending: THREE.AdditiveBlending
             });
@@ -278,133 +547,144 @@
                 mesh: shockwave,
                 light: light,
                 age: 0,
-                maxAge: 4.0, // Seconds
-                maxRadius: 400
+                maxAge: 5.0,
+                maxRadius: type.radius,
+                type: type,
+                pos: pos
             });
 
-            // Camera Shake Trigger
-            const distToPlayer = playerGroup.position.distanceTo(pos);
-            const shakeIntensity = Math.min(500 / distToPlayer, 2.0); // Clamped
-            shakeMagnitude += shakeIntensity;
+            // Camera Shake
+            const dist = playerGroup.position.distanceTo(pos);
+            shakeMagnitude += Math.min(800 / dist, 3.0);
 
-            // Destroy Buildings
+            // Buildings logic
             buildings.forEach(b => {
                 const d = b.position.distanceTo(pos);
-                if (d < 300) {
-                    // Calculate delay based on speed of sound (fake)
-                    setTimeout(() => shatterBuilding(b, pos), (d/343) * 1000 * 0.5);
+                if (d < type.radius) {
+                    // Delay based on distance (fake speed of sound)
+                    const delay = (d / 343) * 0.5; 
+                    setTimeout(() => destroyBuilding(b, pos, type), delay * 1000);
                 }
             });
         }
 
-        function shatterBuilding(b, blastOrigin) {
+        function destroyBuilding(b, origin, type) {
             if (b.userData.isDestroyed) return;
             b.userData.isDestroyed = true;
-
-            // Hide original
             b.visible = false;
 
-            // Spawn debris particles (Visual only for performance)
-            const count = 15;
-            const debGeo = new THREE.BoxGeometry(2, 2, 2);
-            const debMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
+            // Spawn Particles
+            const count = 8;
+            const geo = new THREE.BoxGeometry(2, 2, 2);
             
+            // Particle Color based on nuke
+            let pColor = 0x555555;
+            if(type.physics === 'freeze') pColor = 0xaaffff;
+            if(type.physics === 'fire') pColor = 0xff5500;
+            
+            const mat = new THREE.MeshBasicMaterial({ color: pColor });
+
             for(let i=0; i<count; i++) {
-                const particle = new THREE.Mesh(debGeo, debMat);
-                // Random position within the building volume
-                particle.position.copy(b.position);
-                particle.position.x += (Math.random()-0.5) * b.userData.originalScale.x;
-                particle.position.y += (Math.random()-0.5) * b.userData.originalScale.y;
-                particle.position.z += (Math.random()-0.5) * b.userData.originalScale.z;
+                const p = new THREE.Mesh(geo, mat);
+                p.position.copy(b.position);
+                p.position.x += (Math.random()-0.5) * b.userData.originalScale.x;
+                p.position.y += (Math.random()-0.5) * b.userData.originalScale.y;
+                p.position.z += (Math.random()-0.5) * b.userData.originalScale.z;
+
+                // Physics Velocity
+                let vel = new THREE.Vector3().subVectors(b.position, origin).normalize();
                 
-                // Velocity away from blast
-                const dir = new THREE.Vector3().subVectors(b.position, blastOrigin).normalize();
-                dir.y += 0.5; // Upward kick
-                dir.multiplyScalar(Math.random() * 50 + 20);
-                
-                scene.add(particle);
-                debris.push({ mesh: particle, velocity: dir });
+                if (type.physics === 'suction') {
+                    // Pull IN then Up
+                    vel.negate(); 
+                    vel.y += 2.0; 
+                    vel.multiplyScalar(Math.random() * 40 + 10);
+                } else if (type.physics === 'freeze') {
+                    // Very low velocity, suspended
+                    vel.y += 1;
+                    vel.multiplyScalar(Math.random() * 5);
+                } else {
+                    // Standard Push
+                    vel.y += 0.5;
+                    vel.multiplyScalar(Math.random() * 60 + 20);
+                }
+
+                scene.add(p);
+                debris.push({ mesh: p, velocity: vel, type: type.physics });
             }
         }
 
-        // --- INPUT HANDLING ---
+        // INPUTS
         const keys = { w:false, a:false, s:false, d:false, space:false };
-        window.addEventListener('keydown', (e) => {
-            if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true;
-            if(e.code === 'Space' && !keys.space) {
-                // Drop bomb logic
-                const dropPos = playerGroup.position.clone();
-                dropPos.y -= 2;
-                // Inherit velocity + drop vector
-                const vel = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion).multiplyScalar(speed * 20); // forward momentum
-                bombs.push(new Nuke(dropPos, vel));
-                playSound('drop');
-                keys.space = true;
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = false;
-            if(e.code === 'Space') keys.space = false;
-        });
+        window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; if(e.code==='Space' && !keys.space) fireWeapon(); });
+        window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; if(e.code==='Space') keys.space = false; });
 
-        // --- MAIN LOOP ---
-        let shakeMagnitude = 0;
+        function fireWeapon() {
+            keys.space = true;
+            const dropPos = playerGroup.position.clone();
+            dropPos.y -= 5;
+            // Inherit momentum
+            const vel = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion).multiplyScalar(speed * 30);
+            bombs.push(new Nuke(dropPos, vel, selectedNuke));
+            playSound('drop');
+        }
+
         const clock = new THREE.Clock();
 
         function animate() {
+            if(!isGameRunning) return;
             requestAnimationFrame(animate);
+
             const dt = clock.getDelta();
-            const time = clock.getElapsedTime();
+            
+            // 1. Plane Movement
+            const turnRate = selectedPlane.turnSpeed * dt;
+            
+            if(keys.w) pitch = THREE.MathUtils.lerp(pitch, 1, turnRate);
+            else if(keys.s) pitch = THREE.MathUtils.lerp(pitch, -1, turnRate);
+            else pitch = THREE.MathUtils.lerp(pitch, 0, turnRate * 2);
 
-            // 1. Flight Physics
-            if(keys.w) pitch = THREE.MathUtils.lerp(pitch, 1, 0.05);
-            else if(keys.s) pitch = THREE.MathUtils.lerp(pitch, -1, 0.05);
-            else pitch = THREE.MathUtils.lerp(pitch, 0, 0.1);
-
-            if(keys.a) roll = THREE.MathUtils.lerp(roll, 1, 0.05);
-            else if(keys.d) roll = THREE.MathUtils.lerp(roll, -1, 0.05);
-            else roll = THREE.MathUtils.lerp(roll, 0, 0.1);
+            if(keys.a) roll = THREE.MathUtils.lerp(roll, 1, turnRate);
+            else if(keys.d) roll = THREE.MathUtils.lerp(roll, -1, turnRate);
+            else roll = THREE.MathUtils.lerp(roll, 0, turnRate * 2);
 
             playerGroup.rotateX(pitch * dt * 1.5);
             playerGroup.rotateZ(roll * dt * 2.0);
-            playerGroup.translateZ(-speed * 30 * dt); // Move forward local Z
+            playerGroup.translateZ(-speed * 30 * dt);
+            playerGroup.rotateY(roll * dt * 0.5); // Bank turn
 
-            // Banking turn logic (Yaw into roll)
-            playerGroup.rotateY(roll * dt * 0.5);
-
-            // 2. Camera Chase (Cinematic Lag)
+            // 2. Camera
             const targetPos = playerGroup.position.clone();
-            const offset = new THREE.Vector3(0, 8, 25).applyQuaternion(playerGroup.quaternion);
+            const offset = new THREE.Vector3(0, 10, 30).applyQuaternion(playerGroup.quaternion);
             const camPos = targetPos.clone().add(offset);
-            
-            // Camera Shake logic
+
+            // Shake
             if (shakeMagnitude > 0) {
-                const rx = (Math.random() - 0.5) * shakeMagnitude;
-                const ry = (Math.random() - 0.5) * shakeMagnitude;
-                const rz = (Math.random() - 0.5) * shakeMagnitude;
-                camPos.add(new THREE.Vector3(rx, ry, rz));
-                shakeMagnitude = THREE.MathUtils.lerp(shakeMagnitude, 0, 5 * dt); // Decay
+                camPos.add(new THREE.Vector3((Math.random()-0.5)*shakeMagnitude, (Math.random()-0.5)*shakeMagnitude, (Math.random()-0.5)*shakeMagnitude));
+                shakeMagnitude = THREE.MathUtils.lerp(shakeMagnitude, 0, 3 * dt);
             }
 
-            camera.position.lerp(camPos, 0.1); // Smooth follow
-            camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(playerGroup.quaternion)));
+            camera.position.lerp(camPos, 0.1);
+            camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0,0,-50).applyQuaternion(playerGroup.quaternion)));
 
-            // 3. Update Projectiles
+            // 3. Projectiles
             bombs.forEach(b => b.update(dt));
 
-            // 4. Update Explosions
+            // 4. Explosions
             for(let i = explosions.length - 1; i >= 0; i--) {
                 const ex = explosions[i];
                 ex.age += dt;
-                const progress = ex.age / ex.maxAge; // 0 to 1
+                const progress = ex.age / ex.maxAge;
 
-                // Expansion
-                const radius = THREE.MathUtils.lerp(1, ex.maxRadius, Math.pow(progress, 0.2)); // Fast start, slow end
-                ex.mesh.scale.set(radius, radius, radius);
-                
-                // Fade out
+                const r = THREE.MathUtils.lerp(1, ex.maxRadius, Math.pow(progress, 0.3));
+                ex.mesh.scale.set(r, r, r);
                 ex.mesh.material.opacity = 1.0 - progress;
-                ex.light.intensity = THREE.MathUtils.lerp(50, 0, progress * 2);
+                ex.light.intensity = THREE.MathUtils.lerp(50, 0, progress * 3);
+
+                // Void Special FX
+                if (ex.type.physics === 'delete' && progress < 0.2) {
+                    ex.mesh.material.color.setHex(Math.random() > 0.5 ? 0x000000 : 0xffffff);
+                }
 
                 if(ex.age >= ex.maxAge) {
                     scene.remove(ex.mesh);
@@ -413,10 +693,20 @@
                 }
             }
 
-            // 5. Update Debris Physics
+            // 5. Debris Physics
             for(let i = debris.length - 1; i >= 0; i--) {
                 const d = debris[i];
-                d.velocity.y -= 20 * dt; // Heavy gravity
+                
+                if (d.type === 'freeze') {
+                    d.velocity.multiplyScalar(0.9); // Air drag
+                    d.velocity.y -= 1 * dt; // Low grav
+                } else if (d.type === 'suction') {
+                    // Spiral in?
+                    d.velocity.y -= 10 * dt;
+                } else {
+                    d.velocity.y -= 20 * dt; // Normal grav
+                }
+
                 d.mesh.position.addScaledVector(d.velocity, dt);
                 d.mesh.rotation.x += dt;
                 d.mesh.rotation.z += dt;
@@ -427,23 +717,23 @@
                 }
             }
 
-            // 6. HUD Updates
+            // 6. HUD
             document.getElementById('alt').innerText = Math.floor(playerGroup.position.y);
-            document.getElementById('spd').innerText = (speed + (pitch * 0.2)).toFixed(1);
-            
-            // Render
+            document.getElementById('spd').innerText = (speed * 1.0).toFixed(1);
+
             composer.render();
         }
 
-        // Handle Resize
+        // Resize
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
+            if(camera) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            }
         });
 
-        animate();
     </script>
 </body>
 </html>
