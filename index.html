@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETHER NOVA | Physics Sandbox</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #0ff;
+            text-shadow: 0 0 5px #0ff;
+            pointer-events: none;
+            user-select: none;
+        }
+        #reticle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(0, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #warning {
+            position: absolute;
+            top: 80%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0055;
+            font-size: 24px;
+            font-weight: bold;
+            display: none;
+            text-shadow: 0 0 10px #ff0000;
+            animation: blink 0.2s infinite;
+        }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+        .stat { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div class="stat"><h3>AETHER NOVA // PROTOCOL</h3></div>
+        <div class="stat">ALTITUDE: <span id="alt">0</span> m</div>
+        <div class="stat">SPEED: <span id="spd">0</span> MACH</div>
+        <div class="stat">STATUS: <span id="status" style="color:#0f0">STABLE</span></div>
+        <div class="stat" style="margin-top:10px; font-size: 0.8em;">[W/S] Pitch | [A/D] Roll | [SPACE] Drop Payload</div>
+    </div>
+    <div id="reticle"></div>
+    <div id="warning">IMPACT IMMINENT</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- CONFIGURATION ---
+        const WORLD_SIZE = 4000;
+        const CHUNK_SIZE = 100;
+        const BUILDING_COUNT = 800;
+        const SPEED = 2.5;
+        
+        // --- AUDIO SYSTEM (Synthesized) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+            
+            if (type === 'drop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 1.0);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+                osc.start(now);
+                osc.stop(now + 1.0);
+            } else if (type === 'explode') {
+                // White noise buffer for explosion
+                const bufferSize = audioCtx.sampleRate * 2.0;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                
+                // Lowpass filter for "distant thud" feel
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 1000;
+
+                noise.connect(filter);
+                filter.connect(gain);
+                
+                gain.gain.setValueAtTime(1, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 2.0);
+                noise.start(now);
+                noise.stop(now + 2.0);
+            }
+        }
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050510, 0.0015);
+        scene.background = new THREE.Color(0x050510);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        // --- POST PROCESSING (BLOOM) ---
+        const renderScene = new RenderPass(scene, camera);
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.2;
+        bloomPass.strength = 1.2; // High bloom for sci-fi look
+        bloomPass.radius = 0.5;
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0x404040, 2); // Soft white light
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+        sunLight.position.set(100, 500, 100);
+        scene.add(sunLight);
+
+        // --- CITY GENERATION ---
+        const buildings = [];
+        const cityGroup = new THREE.Group();
+        scene.add(cityGroup);
+
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        // Neon Cyberpunk Material
+        const matBody = new THREE.MeshStandardMaterial({ 
+            color: 0x111111, 
+            roughness: 0.1, 
+            metalness: 0.8 
+        });
+        const matEdge = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.1 });
+
+        // Ground Grid
+        const gridHelper = new THREE.GridHelper(WORLD_SIZE * 2, 200, 0x00ffff, 0x111133);
+        gridHelper.position.y = -2;
+        scene.add(gridHelper);
+
+        for (let i = 0; i < BUILDING_COUNT; i++) {
+            const h = Math.random() * 80 + 20; // Random height
+            const w = Math.random() * 20 + 10;
+            const d = Math.random() * 20 + 10;
+            const x = (Math.random() - 0.5) * WORLD_SIZE;
+            const z = (Math.random() - 0.5) * WORLD_SIZE;
+
+            const mesh = new THREE.Mesh(geo, matBody);
+            mesh.position.set(x, h / 2, z);
+            mesh.scale.set(w, h, d);
+            
+            // Add a glow edge
+            const edge = new THREE.Mesh(geo, matEdge);
+            edge.scale.set(1.02, 1.02, 1.02); // Slightly larger for outline effect
+            mesh.add(edge);
+
+            mesh.userData = { 
+                originalScale: new THREE.Vector3(w, h, d),
+                isDestroyed: false,
+                velocity: new THREE.Vector3()
+            };
+
+            cityGroup.add(mesh);
+            buildings.push(mesh);
+        }
+
+        // --- PLAYER (AIRCRAFT) ---
+        const playerGroup = new THREE.Group();
+        scene.add(playerGroup);
+
+        // Simple Sci-Fi Ship Geometry
+        const shipGeo = new THREE.ConeGeometry(1, 4, 4);
+        shipGeo.rotateX(Math.PI / 2);
+        const shipMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x444444 });
+        const shipMesh = new THREE.Mesh(shipGeo, shipMat);
+        playerGroup.add(shipMesh);
+        
+        // Wings
+        const wingGeo = new THREE.BoxGeometry(6, 0.2, 2);
+        const wingMesh = new THREE.Mesh(wingGeo, shipMat);
+        wingMesh.position.z = 1;
+        playerGroup.add(wingMesh);
+
+        // Engine Trail (Particles)
+        const trailParticles = [];
+        const trailGeo = new THREE.BufferGeometry();
+        const trailMat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.5, transparent: true, opacity: 0.8 });
+        
+        playerGroup.position.set(0, 150, 500);
+        let pitch = 0, roll = 0, yaw = 0;
+        let speed = SPEED;
+
+        // --- NUKE & PHYSICS SYSTEM ---
+        const bombs = [];
+        const explosions = [];
+        const debris = [];
+
+        class Nuke {
+            constructor(pos, velocity) {
+                this.mesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(2, 16, 16),
+                    new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
+                );
+                this.mesh.position.copy(pos);
+                this.velocity = velocity.clone();
+                this.active = true;
+                scene.add(this.mesh);
+            }
+            update(dt) {
+                this.velocity.y -= 9.8 * dt; // Gravity
+                this.mesh.position.addScaledVector(this.velocity, dt);
+                
+                // Ground hit
+                if (this.mesh.position.y <= 0 && this.active) {
+                    this.detonate();
+                }
+            }
+            detonate() {
+                this.active = false;
+                scene.remove(this.mesh);
+                createExplosion(this.mesh.position);
+                playSound('explode');
+            }
+        }
+
+        function createExplosion(pos) {
+            // Flash Light
+            const light = new THREE.PointLight(0x5500ff, 50, 1000); // Violet sci-fi nuke
+            light.position.copy(pos);
+            light.position.y += 20;
+            scene.add(light);
+
+            // Shockwave Sphere
+            const shockGeo = new THREE.SphereGeometry(1, 32, 32);
+            const shockMat = new THREE.MeshBasicMaterial({ 
+                color: 0xaa88ff, 
+                transparent: true, 
+                opacity: 0.5,
+                side: THREE.BackSide,
+                blending: THREE.AdditiveBlending
+            });
+            const shockwave = new THREE.Mesh(shockGeo, shockMat);
+            shockwave.position.copy(pos);
+            scene.add(shockwave);
+
+            explosions.push({
+                mesh: shockwave,
+                light: light,
+                age: 0,
+                maxAge: 4.0, // Seconds
+                maxRadius: 400
+            });
+
+            // Camera Shake Trigger
+            const distToPlayer = playerGroup.position.distanceTo(pos);
+            const shakeIntensity = Math.min(500 / distToPlayer, 2.0); // Clamped
+            shakeMagnitude += shakeIntensity;
+
+            // Destroy Buildings
+            buildings.forEach(b => {
+                const d = b.position.distanceTo(pos);
+                if (d < 300) {
+                    // Calculate delay based on speed of sound (fake)
+                    setTimeout(() => shatterBuilding(b, pos), (d/343) * 1000 * 0.5);
+                }
+            });
+        }
+
+        function shatterBuilding(b, blastOrigin) {
+            if (b.userData.isDestroyed) return;
+            b.userData.isDestroyed = true;
+
+            // Hide original
+            b.visible = false;
+
+            // Spawn debris particles (Visual only for performance)
+            const count = 15;
+            const debGeo = new THREE.BoxGeometry(2, 2, 2);
+            const debMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
+            
+            for(let i=0; i<count; i++) {
+                const particle = new THREE.Mesh(debGeo, debMat);
+                // Random position within the building volume
+                particle.position.copy(b.position);
+                particle.position.x += (Math.random()-0.5) * b.userData.originalScale.x;
+                particle.position.y += (Math.random()-0.5) * b.userData.originalScale.y;
+                particle.position.z += (Math.random()-0.5) * b.userData.originalScale.z;
+                
+                // Velocity away from blast
+                const dir = new THREE.Vector3().subVectors(b.position, blastOrigin).normalize();
+                dir.y += 0.5; // Upward kick
+                dir.multiplyScalar(Math.random() * 50 + 20);
+                
+                scene.add(particle);
+                debris.push({ mesh: particle, velocity: dir });
+            }
+        }
+
+        // --- INPUT HANDLING ---
+        const keys = { w:false, a:false, s:false, d:false, space:false };
+        window.addEventListener('keydown', (e) => {
+            if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true;
+            if(e.code === 'Space' && !keys.space) {
+                // Drop bomb logic
+                const dropPos = playerGroup.position.clone();
+                dropPos.y -= 2;
+                // Inherit velocity + drop vector
+                const vel = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion).multiplyScalar(speed * 20); // forward momentum
+                bombs.push(new Nuke(dropPos, vel));
+                playSound('drop');
+                keys.space = true;
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = false;
+            if(e.code === 'Space') keys.space = false;
+        });
+
+        // --- MAIN LOOP ---
+        let shakeMagnitude = 0;
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. Flight Physics
+            if(keys.w) pitch = THREE.MathUtils.lerp(pitch, 1, 0.05);
+            else if(keys.s) pitch = THREE.MathUtils.lerp(pitch, -1, 0.05);
+            else pitch = THREE.MathUtils.lerp(pitch, 0, 0.1);
+
+            if(keys.a) roll = THREE.MathUtils.lerp(roll, 1, 0.05);
+            else if(keys.d) roll = THREE.MathUtils.lerp(roll, -1, 0.05);
+            else roll = THREE.MathUtils.lerp(roll, 0, 0.1);
+
+            playerGroup.rotateX(pitch * dt * 1.5);
+            playerGroup.rotateZ(roll * dt * 2.0);
+            playerGroup.translateZ(-speed * 30 * dt); // Move forward local Z
+
+            // Banking turn logic (Yaw into roll)
+            playerGroup.rotateY(roll * dt * 0.5);
+
+            // 2. Camera Chase (Cinematic Lag)
+            const targetPos = playerGroup.position.clone();
+            const offset = new THREE.Vector3(0, 8, 25).applyQuaternion(playerGroup.quaternion);
+            const camPos = targetPos.clone().add(offset);
+            
+            // Camera Shake logic
+            if (shakeMagnitude > 0) {
+                const rx = (Math.random() - 0.5) * shakeMagnitude;
+                const ry = (Math.random() - 0.5) * shakeMagnitude;
+                const rz = (Math.random() - 0.5) * shakeMagnitude;
+                camPos.add(new THREE.Vector3(rx, ry, rz));
+                shakeMagnitude = THREE.MathUtils.lerp(shakeMagnitude, 0, 5 * dt); // Decay
+            }
+
+            camera.position.lerp(camPos, 0.1); // Smooth follow
+            camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0,0,-20).applyQuaternion(playerGroup.quaternion)));
+
+            // 3. Update Projectiles
+            bombs.forEach(b => b.update(dt));
+
+            // 4. Update Explosions
+            for(let i = explosions.length - 1; i >= 0; i--) {
+                const ex = explosions[i];
+                ex.age += dt;
+                const progress = ex.age / ex.maxAge; // 0 to 1
+
+                // Expansion
+                const radius = THREE.MathUtils.lerp(1, ex.maxRadius, Math.pow(progress, 0.2)); // Fast start, slow end
+                ex.mesh.scale.set(radius, radius, radius);
+                
+                // Fade out
+                ex.mesh.material.opacity = 1.0 - progress;
+                ex.light.intensity = THREE.MathUtils.lerp(50, 0, progress * 2);
+
+                if(ex.age >= ex.maxAge) {
+                    scene.remove(ex.mesh);
+                    scene.remove(ex.light);
+                    explosions.splice(i, 1);
+                }
+            }
+
+            // 5. Update Debris Physics
+            for(let i = debris.length - 1; i >= 0; i--) {
+                const d = debris[i];
+                d.velocity.y -= 20 * dt; // Heavy gravity
+                d.mesh.position.addScaledVector(d.velocity, dt);
+                d.mesh.rotation.x += dt;
+                d.mesh.rotation.z += dt;
+
+                if(d.mesh.position.y < 0) {
+                    scene.remove(d.mesh);
+                    debris.splice(i, 1);
+                }
+            }
+
+            // 6. HUD Updates
+            document.getElementById('alt').innerText = Math.floor(playerGroup.position.y);
+            document.getElementById('spd').innerText = (speed + (pitch * 0.2)).toFixed(1);
+            
+            // Render
+            composer.render();
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
