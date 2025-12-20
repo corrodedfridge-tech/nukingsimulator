@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nuking Simulator</title>
+    <title>nukingsimulator</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
@@ -108,6 +108,7 @@
             user-select: none;
             display: none;
             font-weight: bold;
+            width: 300px;
         }
         #reticle {
             position: absolute;
@@ -128,6 +129,43 @@
             color: #ffff00;
             font-size: 0.9em;
             display: none;
+        }
+
+        #objective-box {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ff00;
+            font-family: 'Impact', sans-serif;
+            font-size: 1.5em;
+            text-shadow: 0 0 10px #00ff00;
+            display: none;
+            text-align: center;
+        }
+
+        #health-bar-container {
+            width: 100%;
+            height: 10px;
+            background: #333;
+            margin-top: 5px;
+            border: 1px solid #fff;
+        }
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background: #00ff00;
+            transition: width 0.2s, background 0.2s;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5em;
+            font-family: 'Impact', sans-serif;
+            display: none;
+            text-shadow: 0 0 20px red;
         }
     </style>
 </head>
@@ -157,14 +195,21 @@
     <!-- HUD -->
     <div id="hud">
         <div class="stat"><h3 id="hud-plane-name">UNKNOWN AIRCRAFT</h3></div>
-        <div class="stat">WEAPON: <span id="hud-nuke-name" style="color:#ffaa00">--</span></div>
+        <div class="stat">INTEGRITY: <span id="hp-text">100%</span></div>
+        <div id="health-bar-container"><div id="health-bar"></div></div>
+        <div class="stat" style="margin-top: 10px;">WEAPON: <span id="hud-nuke-name" style="color:#ffaa00">--</span></div>
         <div class="stat">ALTITUDE: <span id="alt">0</span> m</div>
-        <div class="stat">SPEED: <span id="spd">0</span> MACH</div>
+        <div class="stat">SPEED: <span id="spd">0</span> km/h</div>
         <div class="stat" style="margin-top:10px; font-size: 0.8em; color: #ddd;">
-            [W/S] Pitch | [A/D] Roll | [SPACE] Drop Payload | [Mouse] Look
+            [SHIFT] Throttle Up | [CTRL] Throttle Down<br>
+            [W/S] Pitch | [A/D] Roll | [SPACE] Drop<br>
+            [MOUSE] Look Around
         </div>
     </div>
+    
+    <div id="objective-box">OBJECTIVE: TAKEOFF</div>
     <div id="reticle"></div>
+    <div id="game-over">MIA</div>
 
     <!-- THREE.JS IMPORT MAP -->
     <script type="importmap">
@@ -193,10 +238,10 @@
         ];
 
         const NUKES = [
-            { id: 'solar', name: 'HELIOS FLARE', desc: 'Fusion warhead (Custom Model).', color: 0xffaa00, shockColor: 0xff5500, radius: 800, physics: 'push', model: true },
-            { id: 'gravity', name: 'GRAVITY COLLAPSE', desc: 'Creates a micro-singularity.', color: 0x8800ff, shockColor: 0xaa00ff, radius: 400, physics: 'suction', model: false },
-            { id: 'cryo', name: 'ABSOLUTE ZERO', desc: 'Flash freezes the atmosphere.', color: 0x00ffff, shockColor: 0xaaffff, radius: 350, physics: 'freeze', model: false },
-            { id: 'void', name: 'VOID ERASER', desc: 'Pure darkness.', color: 0x000000, shockColor: 0xffffff, radius: 500, physics: 'delete', model: false }
+            { id: 'solar', name: 'HELIOS FLARE', desc: 'Fusion warhead (Custom Model).', color: 0xffaa00, shockColor: 0xff5500, radius: 1500, physics: 'push', model: true },
+            { id: 'gravity', name: 'GRAVITY COLLAPSE', desc: 'Creates a micro-singularity.', color: 0x8800ff, shockColor: 0xaa00ff, radius: 800, physics: 'suction', model: false },
+            { id: 'cryo', name: 'ABSOLUTE ZERO', desc: 'Flash freezes the atmosphere.', color: 0x00ffff, shockColor: 0xaaffff, radius: 700, physics: 'freeze', model: false },
+            { id: 'void', name: 'VOID ERASER', desc: 'Pure darkness.', color: 0x000000, shockColor: 0xffffff, radius: 1000, physics: 'delete', model: false }
         ];
 
         // Global State
@@ -205,6 +250,8 @@
         let isGameRunning = false;
         let miniNukeModel = null;
         let assetsLoaded = false;
+        let missionState = 'TAKEOFF'; // TAKEOFF, FLY_TO_TARGET, RETURN, LANDED, DEAD
+        let playerHealth = 100;
 
         // --- PRELOAD ASSETS ---
         const gltfLoader = new GLTFLoader();
@@ -215,14 +262,14 @@
             document.getElementById('loading-msg').style.display = 'block';
             gltfLoader.load(MODEL_URL, (gltf) => {
                 miniNukeModel = gltf.scene;
-                // Normalize scale
-                miniNukeModel.scale.set(15, 15, 15); 
+                // Significantly reduce scale to fit plane
+                miniNukeModel.scale.set(1.5, 1.5, 1.5); 
                 miniNukeModel.rotation.y = Math.PI;
                 assetsLoaded = true;
                 document.getElementById('loading-msg').style.display = 'none';
             }, undefined, (error) => {
                 console.error("Failed to load nuke model:", error);
-                assetsLoaded = true; // Proceed anyway, will fallback to sphere
+                assetsLoaded = true; 
                 document.getElementById('loading-msg').innerText = "ASSET ERROR - USING FALLBACK";
             });
         }
@@ -266,6 +313,7 @@
             document.getElementById('menu-overlay').style.display = 'none';
             document.getElementById('hud').style.display = 'block';
             document.getElementById('reticle').style.display = 'block';
+            document.getElementById('objective-box').style.display = 'block';
             
             document.getElementById('hud-plane-name').innerText = selectedPlane.name;
             document.getElementById('hud-nuke-name').innerText = selectedNuke.name;
@@ -279,34 +327,48 @@
         // --- THREE.JS LOGIC ---
         
         let scene, camera, renderer, composer;
-        let playerGroup, cityGroup, terrainMesh;
+        let playerGroup, cityGroup, terrainMesh, runwayGroup;
         let buildings = [];
         let bombs = [];
         let explosions = [];
         let debris = [];
+        let enemies = [], enemyProjectiles = [];
         let shakeMagnitude = 0;
         let pitch = 0, roll = 0;
-        let speed = 0;
-        const TERRAIN_SIZE = 8000;
+        let currentSpeed = 0; // Actual speed variable
+        let throttle = 0; // 0 to 1
+        const MAX_SPEED = 4.0;
+        const TERRAIN_SIZE = 10000;
+        
+        // Target Logic
+        const TARGET_POS = new THREE.Vector3(0, 0, -5000);
+        let nukeDropped = false;
+
+        // Mouse Look
+        let mouseX = 0, mouseY = 0;
+        document.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
 
         // Simple Noise Function for Terrain
         function getTerrainHeight(x, z) {
-            // Combine a few sine waves for hills
+            // Flat area around runway (0,0)
+            const distFromOrigin = Math.sqrt(x*x + z*z);
+            if(distFromOrigin < 500) return 0;
+
             const scale1 = 0.0005;
             const scale2 = 0.002;
             const h1 = Math.sin(x * scale1) * Math.cos(z * scale1) * 200;
             const h2 = Math.sin(x * scale2 + z * scale2) * 50;
-            const h3 = Math.sin(x * 0.01) * 5; // Detail
-            return Math.max(0, h1 + h2 + h3); // Keep it mostly positive
+            return Math.max(0, h1 + h2);
         }
 
         function initThreeJS() {
             isGameRunning = true;
-            speed = selectedPlane.speed;
-
+            
             // 1. Setup Scene (DAYTIME)
             scene = new THREE.Scene();
-            // Sky Blue Background
             const skyColor = 0x87CEEB;
             scene.background = new THREE.Color(skyColor);
             scene.fog = new THREE.Fog(skyColor, 1000, 7000);
@@ -317,14 +379,13 @@
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
+            renderer.toneMappingExposure = 0.8;
             document.body.appendChild(renderer.domElement);
 
             // 2. Post Processing
             const renderScene = new RenderPass(scene, camera);
-            // Lower bloom intensity for day time so it's not blinding
             const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.8; // Higher threshold for day
+            bloomPass.threshold = 0.8;
             bloomPass.strength = 0.6;
             bloomPass.radius = 0.2;
 
@@ -339,27 +400,30 @@
             const sunLight = new THREE.DirectionalLight(0xffffee, 1.5);
             sunLight.position.set(2000, 3000, 1000);
             sunLight.castShadow = true;
-            sunLight.shadow.camera.left = -2000;
-            sunLight.shadow.camera.right = 2000;
-            sunLight.shadow.camera.top = 2000;
-            sunLight.shadow.camera.bottom = -2000;
-            sunLight.shadow.mapSize.width = 2048;
-            sunLight.shadow.mapSize.height = 2048;
-            sunLight.shadow.bias = -0.0005;
+            sunLight.shadow.camera.left = -5000;
+            sunLight.shadow.camera.right = 5000;
+            sunLight.shadow.camera.top = 5000;
+            sunLight.shadow.camera.bottom = -5000;
+            sunLight.shadow.mapSize.width = 4096;
+            sunLight.shadow.mapSize.height = 4096;
             scene.add(sunLight);
 
-            // 4. Generate Terrain & City
+            // 4. World Gen
             generateTerrain();
+            generateRunway();
             generateCity();
 
-            // 5. Build Player Aircraft
+            // 5. Player
             buildAircraft();
 
-            // 6. Audio Context
+            // 6. Audio
             initAudio();
 
-            // 7. Start Loop
+            // 7. Loop
             animate();
+            
+            // Enemy Spawner
+            setInterval(spawnEnemy, 4000);
         }
 
         function generateTerrain() {
@@ -373,17 +437,34 @@
                 posAttribute.setY(i, getTerrainHeight(x, z));
             }
             geometry.computeVertexNormals();
-
-            const material = new THREE.MeshStandardMaterial({ 
-                color: 0x5a7d4a, // Grass Green
-                roughness: 1.0, 
-                metalness: 0.0,
-                side: THREE.DoubleSide
-            });
-
+            const material = new THREE.MeshStandardMaterial({ color: 0x5a7d4a, roughness: 1.0 });
             terrainMesh = new THREE.Mesh(geometry, material);
             terrainMesh.receiveShadow = true;
             scene.add(terrainMesh);
+        }
+
+        function generateRunway() {
+            runwayGroup = new THREE.Group();
+            // Tarmac
+            const strip = new THREE.Mesh(
+                new THREE.PlaneGeometry(200, 2000),
+                new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 })
+            );
+            strip.rotation.x = -Math.PI/2;
+            strip.position.y = 0.2; // slightly above terrain
+            strip.receiveShadow = true;
+            runwayGroup.add(strip);
+            
+            // Hangar
+            const hangar = new THREE.Mesh(
+                new THREE.BoxGeometry(300, 100, 300),
+                new THREE.MeshStandardMaterial({ color: 0x666666 })
+            );
+            hangar.position.set(250, 50, 800);
+            hangar.castShadow = true;
+            runwayGroup.add(hangar);
+            
+            scene.add(runwayGroup);
         }
 
         function generateCity() {
@@ -391,23 +472,29 @@
             scene.add(cityGroup);
 
             const geo = new THREE.BoxGeometry(1, 1, 1);
-            // Concrete color
-            const matBody = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.8, metalness: 0.1 });
-            const matWindows = new THREE.MeshBasicMaterial({ color: 0x111122 }); 
+            const matBody = new THREE.MeshStandardMaterial({ color: 0x888899, roughness: 0.8 });
 
-            // Simple building generation
-            for (let i = 0; i < 1500; i++) { // More buildings
+            // Target Marker
+            const targetMarker = new THREE.Mesh(
+                new THREE.CylinderGeometry(50, 50, 1000, 16),
+                new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.3 })
+            );
+            targetMarker.position.copy(TARGET_POS);
+            targetMarker.position.y = 500;
+            cityGroup.add(targetMarker);
+
+            for (let i = 0; i < 1500; i++) {
                 const w = Math.random() * 30 + 15;
                 const d = Math.random() * 30 + 15;
-                const h = Math.random() * 100 + 30; // Taller buildings
+                const h = Math.random() * 100 + 30;
                 
-                const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.8);
-                const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.8);
+                // Cluster around target
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 2000;
+                const x = TARGET_POS.x + Math.cos(angle) * dist;
+                const z = TARGET_POS.z + Math.sin(angle) * dist;
                 
-                // Get terrain height at this position
                 const yGround = getTerrainHeight(x, z);
-
-                // Skip if underwater or too high (optional logic, kept simple here)
                 
                 const mesh = new THREE.Mesh(geo, matBody);
                 mesh.position.set(x, yGround + h / 2, z);
@@ -424,230 +511,262 @@
         function buildAircraft() {
             playerGroup = new THREE.Group();
             scene.add(playerGroup);
-            playerGroup.position.set(0, 500, 1500);
+            // Start on Runway
+            playerGroup.position.set(0, 5, 800); 
 
-            const mat = new THREE.MeshStandardMaterial({ 
-                color: selectedPlane.color, 
-                roughness: 0.3,
-                metalness: 0.8
-            });
+            const mat = new THREE.MeshStandardMaterial({ color: selectedPlane.color, roughness: 0.3, metalness: 0.8 });
 
-            let bodyGeo, wingGeo;
-            if (selectedPlane.type === 'stealth') {
-                bodyGeo = new THREE.ConeGeometry(1.5, 8, 4); bodyGeo.rotateX(Math.PI/2);
-                wingGeo = new THREE.BoxGeometry(10, 0.1, 5);
-            } else if (selectedPlane.type === 'bomber') {
-                bodyGeo = new THREE.BoxGeometry(6, 4, 15);
-                wingGeo = new THREE.BoxGeometry(22, 0.6, 4);
-            } else {
-                bodyGeo = new THREE.ConeGeometry(1, 6, 16); bodyGeo.rotateX(Math.PI/2);
-                wingGeo = new THREE.BoxGeometry(8, 0.2, 3);
-            }
-
-            const body = new THREE.Mesh(bodyGeo, mat);
-            const wings = new THREE.Mesh(wingGeo, mat);
-            if(selectedPlane.type === 'stealth') wings.position.z = 2;
+            // Fuselage
+            const body = new THREE.Mesh(new THREE.ConeGeometry(1.5, 12, 16), mat);
+            body.rotation.x = Math.PI/2;
             
-            body.castShadow = true;
-            wings.castShadow = true;
+            // Wings
+            const wings = new THREE.Mesh(new THREE.BoxGeometry(14, 0.2, 4), mat);
+            wings.position.set(0, 0, 2);
+
+            // Tail
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(5, 0.2, 3), mat);
+            tail.position.set(0, 0, 5);
+
+            const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4, 3), mat);
+            tailFin.position.set(0, 1.5, 5);
 
             playerGroup.add(body);
             playerGroup.add(wings);
-
-            // Jet Stream (Particle-ish)
-            const streamGeo = new THREE.ConeGeometry(0.5, 4, 8);
-            streamGeo.rotateX(-Math.PI/2);
-            const streamMat = new THREE.MeshBasicMaterial({ color: 0xffeeaa, transparent: true, opacity: 0.6 });
-            const stream = new THREE.Mesh(streamGeo, streamMat);
-            stream.position.z = 5;
-            playerGroup.add(stream);
-        }
-
-        // --- AUDIO SYSTEM ---
-        let audioCtx;
-        function initAudio() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-
-        function playSound(type) {
-            if(!audioCtx) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            playerGroup.add(tail);
+            playerGroup.add(tailFin);
             
+            playerGroup.castShadow = true;
+        }
+
+        function spawnEnemy() {
+            if (missionState === 'TAKEOFF' || missionState === 'DEAD') return;
+            
+            const enemy = new THREE.Group();
+            const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const body = new THREE.Mesh(new THREE.ConeGeometry(1, 5, 8), mat);
+            body.rotation.x = Math.PI/2;
+            enemy.add(body);
+
+            // Spawn relative to player
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 800;
+            const pos = new THREE.Vector3(
+                playerGroup.position.x + Math.cos(angle) * dist,
+                playerGroup.position.y + (Math.random()-0.5) * 200,
+                playerGroup.position.z + Math.sin(angle) * dist
+            );
+            
+            enemy.position.copy(pos);
+            enemy.lookAt(playerGroup.position);
+            scene.add(enemy);
+            enemies.push({ mesh: enemy, lastShot: Date.now() });
+        }
+
+        // --- AUDIO ---
+        let audioCtx;
+        function initAudio() { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        function playSound(type) {
+            if(!audioCtx || audioCtx.state === 'suspended') audioCtx?.resume();
+            if(!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             const now = audioCtx.currentTime;
 
-            if (type === 'drop') {
+            if(type === 'drop') {
                 osc.frequency.setValueAtTime(400, now);
-                osc.frequency.exponentialRampToValueAtTime(100, now + 1.0);
+                osc.frequency.exponentialRampToValueAtTime(100, now+1);
                 gain.gain.setValueAtTime(0.2, now);
-                gain.gain.linearRampToValueAtTime(0, now + 1.0);
-                osc.start(now);
-                osc.stop(now + 1.0);
-            } else if (type === 'boom') {
-                const bufferSize = audioCtx.sampleRate * 2.0;
-                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
-                const noise = audioCtx.createBufferSource();
-                noise.buffer = buffer;
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.value = 400;
-                noise.connect(filter);
-                filter.connect(gain);
-                gain.gain.setValueAtTime(3.0, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 4.0);
-                noise.start(now);
-                noise.stop(now + 4.0);
+                gain.gain.linearRampToValueAtTime(0, now+1);
+                osc.start(now); osc.stop(now+1);
+            } else if(type === 'boom') {
+                const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*2, audioCtx.sampleRate);
+                const d = buf.getChannelData(0);
+                for(let i=0; i<d.length; i++) d[i] = Math.random()*2-1;
+                const src = audioCtx.createBufferSource();
+                src.buffer = buf;
+                const f = audioCtx.createBiquadFilter();
+                f.type = 'lowpass'; f.frequency.value = 300;
+                src.connect(f); f.connect(gain);
+                gain.gain.setValueAtTime(3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now+3);
+                src.start(now); src.stop(now+3);
+            } else if (type === 'hit') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(50, now+0.2);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0, now+0.2);
+                osc.start(now); osc.stop(now+0.2);
             }
         }
 
-        // --- PHYSICS & FX ---
-
+        // --- PHYSICS ---
         class Nuke {
             constructor(pos, vel, type) {
                 this.type = type;
-                
-                // Use GLB model if available and selected
                 if (type.model && miniNukeModel) {
                     this.mesh = miniNukeModel.clone();
                 } else {
-                    // Fallback Sphere
-                    this.mesh = new THREE.Mesh(
-                        new THREE.SphereGeometry(2, 16, 16),
-                        new THREE.MeshStandardMaterial({ color: type.color, roughness: 0.5 })
-                    );
+                    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshStandardMaterial({color: type.color}));
                 }
-
                 this.mesh.position.copy(pos);
-                this.mesh.castShadow = true;
-                
+                // Ensure correct initial rotation based on plane
+                this.mesh.rotation.copy(playerGroup.rotation);
+                // The model needs to be rotated 90deg to point down/forward if using GLB
+                if(type.model) this.mesh.rotateX(-Math.PI/2);
+
                 this.velocity = vel.clone();
                 this.active = true;
                 scene.add(this.mesh);
             }
             update(dt) {
                 if(!this.active) return;
-                this.velocity.y -= 9.8 * dt; // Gravity
+                this.velocity.y -= 15 * dt; 
                 this.mesh.position.addScaledVector(this.velocity, dt);
                 
-                // Orient bomb to velocity
-                if (this.velocity.lengthSq() > 0.1) {
-                    // Make the Z-axis of the model point in velocity direction
-                    const target = this.mesh.position.clone().add(this.velocity);
-                    this.mesh.lookAt(target);
-                }
-
-                // Check Terrain Collision
-                const groundY = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
-                if (this.mesh.position.y <= groundY) {
-                    this.detonate();
-                }
+                const gY = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+                if (this.mesh.position.y <= gY) this.detonate();
             }
             detonate() {
                 this.active = false;
                 scene.remove(this.mesh);
                 spawnExplosion(this.mesh.position, this.type);
                 playSound('boom');
+                nukeDropped = true;
+                updateObjective();
             }
         }
 
         function spawnExplosion(pos, type) {
-            // Flash
             const light = new THREE.PointLight(type.color, 20, 3000);
-            light.position.copy(pos);
-            light.position.y += 50;
+            light.position.copy(pos).setY(pos.y+50);
             scene.add(light);
 
-            // Shockwave
-            const shockGeo = new THREE.SphereGeometry(1, 32, 32);
-            const shockMat = new THREE.MeshBasicMaterial({ 
-                color: type.shockColor, 
-                transparent: true, 
-                opacity: 0.5,
-                side: THREE.BackSide,
-                blending: THREE.AdditiveBlending
-            });
-            const shockwave = new THREE.Mesh(shockGeo, shockMat);
-            shockwave.position.copy(pos);
-            scene.add(shockwave);
+            const shock = new THREE.Mesh(
+                new THREE.SphereGeometry(1, 32, 32),
+                new THREE.MeshBasicMaterial({color: type.shockColor, transparent: true, opacity: 0.5, side: THREE.BackSide})
+            );
+            shock.position.copy(pos);
+            scene.add(shock);
 
-            explosions.push({
-                mesh: shockwave,
-                light: light,
-                age: 0,
-                maxAge: 4.0,
-                maxRadius: type.radius,
-                type: type,
-                pos: pos
-            });
-
-            // Camera Shake
+            explosions.push({ mesh: shock, light: light, age: 0, maxAge: 5.0, maxRadius: type.radius, type: type, pos: pos });
+            
+            // Check Player Damage
             const dist = playerGroup.position.distanceTo(pos);
-            shakeMagnitude += Math.min(1000 / dist, 5.0);
+            const lethalRadius = 400; // Instant death
+            const damageRadius = 1500; // Shockwave damage
+            
+            shakeMagnitude = Math.min(2000/dist, 10);
 
-            // Buildings logic
+            if(dist < lethalRadius) {
+                takeDamage(100);
+            } else if (dist < damageRadius) {
+                takeDamage((1.0 - dist/damageRadius) * 50);
+            }
+
             buildings.forEach(b => {
                 const d = b.position.distanceTo(pos);
-                if (d < type.radius) {
-                    const delay = (d / 343) * 1.0; 
-                    setTimeout(() => destroyBuilding(b, pos, type), delay * 1000);
-                }
+                if(d < type.radius) setTimeout(() => destroyBuilding(b, pos, type), (d/343)*1000);
             });
         }
 
         function destroyBuilding(b, origin, type) {
-            if (b.userData.isDestroyed) return;
+            if(b.userData.isDestroyed) return;
             b.userData.isDestroyed = true;
-            b.visible = false; // Hide original building
-
-            // Spawn Particles/Debris
-            const count = 10;
-            const geo = new THREE.BoxGeometry(4, 4, 4);
-            const mat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 1.0 });
-
-            for(let i=0; i<count; i++) {
+            b.visible = false;
+            
+            const count = 5;
+            const geo = new THREE.BoxGeometry(4,4,4);
+            const mat = new THREE.MeshStandardMaterial({color: 0x555555});
+            
+            for(let i=0; i<count; i++){
                 const p = new THREE.Mesh(geo, mat);
                 p.position.copy(b.position);
-                // Scatter within building volume
-                p.position.x += (Math.random()-0.5) * b.userData.originalScale.x;
-                p.position.y += (Math.random()-0.5) * b.userData.originalScale.y;
-                p.position.z += (Math.random()-0.5) * b.userData.originalScale.z;
-                p.castShadow = true;
-
-                // Physics Velocity
+                p.position.x += (Math.random()-0.5)*20;
                 let vel = new THREE.Vector3().subVectors(b.position, origin).normalize();
-                
-                if (type.physics === 'suction') {
-                    vel.negate(); vel.y += 2.0; vel.multiplyScalar(Math.random() * 50 + 20);
-                } else if (type.physics === 'freeze') {
-                    vel.y += 0.5; vel.multiplyScalar(Math.random() * 5); // Frozen crumble
-                } else if (type.physics === 'delete') {
-                    return; // No debris for void
-                } else {
-                    vel.y += 0.8; vel.multiplyScalar(Math.random() * 80 + 30);
-                }
-
+                if(type.physics === 'suction') { vel.negate(); vel.y+=1; }
+                else { vel.y+=1; }
+                vel.multiplyScalar(50);
                 scene.add(p);
-                debris.push({ mesh: p, velocity: vel, type: type.physics, groundY: b.userData.groundY });
+                debris.push({mesh:p, velocity:vel});
             }
         }
 
-        // INPUTS
-        const keys = { w:false, a:false, s:false, d:false, space:false };
-        window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; if(e.code==='Space' && !keys.space) fireWeapon(); });
-        window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; if(e.code==='Space') keys.space = false; });
+        function takeDamage(amount) {
+            playerHealth -= amount;
+            if(playerHealth <= 0) {
+                playerHealth = 0;
+                missionState = 'DEAD';
+                document.getElementById('game-over').style.display = 'block';
+                document.getElementById('game-over').innerText = "K.I.A.";
+                document.getElementById('game-over').style.color = "red";
+                // Explode player
+                const fire = new THREE.PointLight(0xffaa00, 10, 500);
+                fire.position.copy(playerGroup.position);
+                scene.add(fire);
+                playerGroup.visible = false;
+            }
+            // Update HUD
+            document.getElementById('health-bar').style.width = playerHealth + '%';
+            document.getElementById('health-bar').style.background = playerHealth < 30 ? 'red' : '#00ff00';
+            document.getElementById('hp-text').innerText = Math.floor(playerHealth) + '%';
+            if(amount > 5) playSound('hit');
+        }
+
+        // --- INPUT ---
+        const keys = { w:false, a:false, s:false, d:false, space:false, shift:false, control:false };
+        window.addEventListener('keydown', e => { 
+            if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; 
+            if(e.key === 'Shift') keys.shift = true;
+            if(e.key === 'Control') keys.control = true;
+            if(e.code === 'Space' && !keys.space) fireWeapon();
+        });
+        window.addEventListener('keyup', e => { 
+            if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; 
+            if(e.key === 'Shift') keys.shift = false;
+            if(e.key === 'Control') keys.control = false;
+            if(e.code === 'Space') keys.space = false;
+        });
 
         function fireWeapon() {
-            keys.space = true;
+            if(missionState === 'DEAD' || missionState === 'TAKEOFF') return;
             const dropPos = playerGroup.position.clone();
-            dropPos.y -= 10;
-            const vel = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion).multiplyScalar(speed * 30);
-            bombs.push(new Nuke(dropPos, vel, selectedNuke));
+            // Drop exactly from under the plane
+            dropPos.y -= 5; 
+            
+            // Initial nuke velocity matches plane + downward push
+            const planeVel = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion).multiplyScalar(currentSpeed * 20);
+            const dropVel = planeVel.clone();
+            dropVel.y -= 10; 
+
+            bombs.push(new Nuke(dropPos, dropVel, selectedNuke));
             playSound('drop');
+        }
+
+        function updateObjective() {
+            const box = document.getElementById('objective-box');
+            if(missionState === 'DEAD') box.innerText = "MISSION FAILED";
+            else if(nukeDropped) {
+                missionState = 'RETURN';
+                box.innerText = "OBJECTIVE: RETURN TO BASE";
+                box.style.color = "#00ffff";
+            } else {
+                const dist = playerGroup.position.distanceTo(TARGET_POS);
+                if(dist < 1000) {
+                    missionState = 'DROP_ZONE';
+                    box.innerText = "OBJECTIVE: DROP PAYLOAD";
+                    box.style.color = "#ff0000";
+                    box.style.animation = "blink 0.5s infinite";
+                } else {
+                    missionState = 'EN_ROUTE';
+                    box.innerText = "OBJECTIVE: FLY TO TARGET (" + Math.floor(dist) + "m)";
+                    box.style.color = "#00ff00";
+                    box.style.animation = "none";
+                }
+            }
         }
 
         const clock = new THREE.Clock();
@@ -655,36 +774,73 @@
         function animate() {
             if(!isGameRunning) return;
             requestAnimationFrame(animate);
-
             const dt = clock.getDelta();
-            
-            // 1. Plane Movement
-            const turnRate = selectedPlane.turnSpeed * dt;
-            
-            if(keys.w) pitch = THREE.MathUtils.lerp(pitch, 1, turnRate);
-            else if(keys.s) pitch = THREE.MathUtils.lerp(pitch, -1, turnRate);
-            else pitch = THREE.MathUtils.lerp(pitch, 0, turnRate * 2);
 
-            if(keys.a) roll = THREE.MathUtils.lerp(roll, 1, turnRate);
-            else if(keys.d) roll = THREE.MathUtils.lerp(roll, -1, turnRate);
-            else roll = THREE.MathUtils.lerp(roll, 0, turnRate * 2);
+            if(missionState !== 'DEAD') {
+                // Throttle Logic
+                if(keys.shift) throttle = Math.min(throttle + dt * 0.5, 1);
+                if(keys.control) throttle = Math.max(throttle - dt * 0.5, 0);
+                
+                // Acceleration
+                const targetSpeed = throttle * selectedPlane.speed * MAX_SPEED;
+                currentSpeed = THREE.MathUtils.lerp(currentSpeed, targetSpeed, dt * 0.5);
 
-            playerGroup.rotateX(pitch * dt * 1.5);
-            playerGroup.rotateZ(roll * dt * 2.0);
-            playerGroup.translateZ(-speed * 30 * dt);
-            playerGroup.rotateY(roll * dt * 0.5);
+                // Control Surface Logic
+                const turnRate = selectedPlane.turnSpeed * dt;
+                
+                // Pitch (W/S)
+                if(keys.w) pitch = THREE.MathUtils.lerp(pitch, 1, turnRate);
+                else if(keys.s) pitch = THREE.MathUtils.lerp(pitch, -1, turnRate);
+                else pitch = THREE.MathUtils.lerp(pitch, 0, turnRate * 2);
 
-            // Flight floor check
-            const groundH = getTerrainHeight(playerGroup.position.x, playerGroup.position.z);
-            if(playerGroup.position.y < groundH + 10) {
-                playerGroup.position.y = groundH + 10; // Crash protection
+                // Roll (A/D)
+                if(keys.a) roll = THREE.MathUtils.lerp(roll, 1, turnRate);
+                else if(keys.d) roll = THREE.MathUtils.lerp(roll, -1, turnRate);
+                else roll = THREE.MathUtils.lerp(roll, 0, turnRate * 2);
+
+                // Apply Rotations
+                playerGroup.rotateX(pitch * dt * 1.5);
+                playerGroup.rotateZ(roll * dt * 2.0);
+                playerGroup.rotateY(roll * dt * 0.5); // Bank turn
+
+                // Apply Movement
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion);
+                playerGroup.position.addScaledVector(forward, currentSpeed * 200 * dt);
+
+                // Lift & Gravity logic
+                const lift = Math.min(currentSpeed / 2.0, 1.2) * 9.8 * 2.5; // Lift increases with speed
+                const gravity = 9.8 * 2.0;
+                
+                // Simply modify Y directly for "arcade" physics feel
+                // If pitch is up and we have speed, we go up. 
+                // We don't need complex vector addition for this simple sim, 
+                // just rely on forward vector + gravity
+                
+                // Ground Clamp / Crash
+                const gY = getTerrainHeight(playerGroup.position.x, playerGroup.position.z);
+                if(playerGroup.position.y < gY + 5) {
+                    playerGroup.position.y = gY + 5;
+                    // Reset pitch if on ground to flatten out
+                    if(Math.abs(playerGroup.rotation.x) > 0.1) playerGroup.rotation.x *= 0.9;
+                    if(Math.abs(playerGroup.rotation.z) > 0.1) playerGroup.rotation.z *= 0.9;
+                } else {
+                    // Apply Gravity if flying slow
+                    if(currentSpeed < 0.5) playerGroup.position.y -= (1.0 - currentSpeed) * 100 * dt;
+                }
+
+                if(!nukeDropped) updateObjective();
             }
 
-            // 2. Camera
+            // Camera System (Mouse Look)
             const targetPos = playerGroup.position.clone();
-            const offset = new THREE.Vector3(0, 15, 40).applyQuaternion(playerGroup.quaternion);
-            const camPos = targetPos.clone().add(offset);
-
+            // Base offset behind plane
+            const baseOffset = new THREE.Vector3(0, 20, 60).applyQuaternion(playerGroup.quaternion);
+            
+            // Mouse Influence (Orbit)
+            const lookOffset = new THREE.Vector3(mouseX * 50, mouseY * 30, 0);
+            
+            const camPos = targetPos.clone().add(baseOffset);
+            
             // Shake
             if (shakeMagnitude > 0) {
                 camPos.add(new THREE.Vector3((Math.random()-0.5)*shakeMagnitude, (Math.random()-0.5)*shakeMagnitude, (Math.random()-0.5)*shakeMagnitude));
@@ -692,52 +848,84 @@
             }
 
             camera.position.lerp(camPos, 0.1);
-            camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0,0,-80).applyQuaternion(playerGroup.quaternion)));
+            
+            // Look at plane + mouse offset
+            const lookAtPoint = playerGroup.position.clone().add(new THREE.Vector3(0,0,-100).applyQuaternion(playerGroup.quaternion));
+            lookAtPoint.add(lookOffset);
+            camera.lookAt(lookAtPoint);
 
-            // 3. Projectiles
+
+            // Enemy Logic
+            enemies.forEach(e => {
+                const dist = e.mesh.position.distanceTo(playerGroup.position);
+                // Move towards player
+                const dir = new THREE.Vector3().subVectors(playerGroup.position, e.mesh.position).normalize();
+                e.mesh.position.addScaledVector(dir, 100 * dt);
+                e.mesh.lookAt(playerGroup.position);
+                
+                // Shoot
+                if(dist < 2000 && Date.now() - e.lastShot > 2000 && missionState !== 'DEAD') {
+                    // Create Projectile
+                    const proj = new THREE.Mesh(new THREE.BoxGeometry(1,1,10), new THREE.MeshBasicMaterial({color: 0xffff00}));
+                    proj.position.copy(e.mesh.position);
+                    proj.lookAt(playerGroup.position);
+                    const vel = dir.multiplyScalar(600); // Fast
+                    enemyProjectiles.push({mesh: proj, velocity: vel, life: 3.0});
+                    scene.add(proj);
+                    e.lastShot = Date.now();
+                }
+            });
+
+            // Projectiles
+            for(let i=enemyProjectiles.length-1; i>=0; i--) {
+                const p = enemyProjectiles[i];
+                p.life -= dt;
+                p.mesh.position.addScaledVector(p.velocity, dt);
+                
+                if(p.mesh.position.distanceTo(playerGroup.position) < 15) {
+                    takeDamage(10);
+                    scene.remove(p.mesh);
+                    enemyProjectiles.splice(i,1);
+                    continue;
+                }
+                
+                if(p.life <= 0) {
+                    scene.remove(p.mesh);
+                    enemyProjectiles.splice(i,1);
+                }
+            }
+
+            // Updates
             bombs.forEach(b => b.update(dt));
-
-            // 4. Explosions
+            
             for(let i = explosions.length - 1; i >= 0; i--) {
                 const ex = explosions[i];
                 ex.age += dt;
                 const progress = ex.age / ex.maxAge;
-
                 const r = THREE.MathUtils.lerp(1, ex.maxRadius, Math.pow(progress, 0.3));
                 ex.mesh.scale.set(r, r, r);
                 ex.mesh.material.opacity = Math.max(0, 1.0 - progress);
                 ex.light.intensity = THREE.MathUtils.lerp(20, 0, progress * 4);
-
-                if(ex.age >= ex.maxAge) {
-                    scene.remove(ex.mesh);
-                    scene.remove(ex.light);
-                    explosions.splice(i, 1);
-                }
+                if(ex.age >= ex.maxAge) { scene.remove(ex.mesh); scene.remove(ex.light); explosions.splice(i, 1); }
             }
 
-            // 5. Debris Physics
             for(let i = debris.length - 1; i >= 0; i--) {
                 const d = debris[i];
-                d.velocity.y -= 20 * dt; // Gravity
+                d.velocity.y -= 20 * dt; 
                 d.mesh.position.addScaledVector(d.velocity, dt);
                 d.mesh.rotation.x += dt; 
-                
-                // Ground collision for debris
                 const gY = getTerrainHeight(d.mesh.position.x, d.mesh.position.z);
-                if(d.mesh.position.y < gY) {
-                    scene.remove(d.mesh);
-                    debris.splice(i, 1);
-                }
+                if(d.mesh.position.y < gY) { scene.remove(d.mesh); debris.splice(i, 1); }
             }
 
-            // 6. HUD
+            // HUD
             document.getElementById('alt').innerText = Math.floor(playerGroup.position.y);
-            document.getElementById('spd').innerText = (speed * 1.0).toFixed(1);
-
+            const kmh = Math.floor(currentSpeed * 1234); // Approx Mach 1 scaling
+            document.getElementById('spd').innerText = kmh;
+            
             composer.render();
         }
 
-        // Resize
         window.addEventListener('resize', () => {
             if(camera) {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -746,7 +934,6 @@
                 composer.setSize(window.innerWidth, window.innerHeight);
             }
         });
-
     </script>
 </body>
 </html>
